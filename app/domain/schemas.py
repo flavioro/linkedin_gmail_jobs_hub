@@ -17,6 +17,7 @@ class JobParsed(BaseModel):
     title: str | None = None
     company: str | None = None
     location_raw: str | None = None
+    is_easy_apply: bool | None = None
     seniority: Seniority = Seniority.NAO_INFORMADO
     work_model: WorkModel = WorkModel.NAO_INFORMADO
     received_at: datetime | None = None
@@ -40,6 +41,7 @@ class JobRead(BaseModel):
     title: str | None = None
     company: str | None = None
     location_raw: str | None = None
+    is_easy_apply: bool | None = None
     seniority: str
     work_model: str
     received_at: datetime | None = None

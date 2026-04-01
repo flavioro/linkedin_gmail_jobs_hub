@@ -43,7 +43,15 @@ class JobsRepository:
         stmt = select(Job).where(Job.linkedin_job_url == linkedin_job_url)
         return self.db.execute(stmt).scalar_one_or_none()
 
-    def list_jobs(self, company: str | None, seniority: str | None, work_model: str | None, limit: int, offset: int) -> list[Job]:
+    def list_jobs(
+        self,
+        company: str | None,
+        seniority: str | None,
+        work_model: str | None,
+        is_easy_apply: bool | None,
+        limit: int,
+        offset: int,
+    ) -> list[Job]:
         stmt = select(Job).order_by(Job.created_at.desc(), Job.id.desc()).limit(limit).offset(offset)
         if company:
             stmt = stmt.where(Job.company.ilike(f"%{company}%"))
@@ -51,6 +59,8 @@ class JobsRepository:
             stmt = stmt.where(Job.seniority == seniority)
         if work_model:
             stmt = stmt.where(Job.work_model == work_model)
+        if is_easy_apply is not None:
+            stmt = stmt.where(Job.is_easy_apply.is_(is_easy_apply))
         return list(self.db.execute(stmt).scalars().all())
 
     def count_all(self) -> int:

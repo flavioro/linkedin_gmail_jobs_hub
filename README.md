@@ -1,26 +1,40 @@
-# LinkedIn Gmail Jobs Hub — Fase 1.5
+# LinkedIn Gmail Jobs Hub
 
-API em Python para centralizar e processar vagas do LinkedIn recebidas por e-mail no Gmail.
+API em Python para centralizar, sincronizar e consultar vagas do LinkedIn recebidas por e-mail no Gmail.
 
-## O que já está implementado
-- FastAPI com Swagger em `/docs`
-- Segurança simples via `X-API-Key`
-- Integração com Gmail API usando OAuth2 e refresh de token
-- **Script de bootstrap** para gerar `token.json`
-- Sync assíncrono com `BackgroundTasks` e retorno `202 Accepted`
-- Parser com suporte a **múltiplas vagas no mesmo e-mail**
-- Parser HTML com BeautifulSoup usando `lxml`
-- Normalização forte da URL do LinkedIn
-- Extração de `linkedin_job_id`
-- Deduplicação em camadas
-- Persistência em SQLite com SQLAlchemy
-- **Melhoria no banco** com novos campos (`email_subject`, `linkedin_template`, `parser_used`) e tabela `unknown_email_templates`
-- Registro de templates desconhecidos para evolução futura
-- **Script de seed** com dados de exemplo
-- Registro de falhas por etapa
-- Testes mínimos do parser, normalização, dedupe e API
+O projeto lê mensagens via Gmail API, identifica templates do LinkedIn, extrai uma ou várias vagas por e-mail, persiste em SQLite e expõe tudo por API com FastAPI.
 
-## Endpoints
+## Principais capacidades
+- FastAPI com documentação automática em `/docs`
+- proteção simples via header `X-API-Key`
+- autenticação Gmail com OAuth2 (`credentials.json` + `token.json`)
+- sync assíncrono com `BackgroundTasks`
+- parsing de templates reais do LinkedIn
+- suporte a **múltiplas vagas no mesmo e-mail**
+- deduplicação por `linkedin_job_id` e URL normalizada
+- persistência em SQLite com SQLAlchemy
+- trilha de auditoria para e-mails ignorados e templates desconhecidos
+- filtro opcional por `is_easy_apply` (`Candidatura simplificada`) na listagem de vagas
+- testes unitários para parser, API, sync, queries Gmail e deduplicação
+
+## Stack
+- Python 3.11+
+- FastAPI
+- SQLAlchemy
+- SQLite
+- BeautifulSoup + lxml
+- Gmail API
+- Pytest
+
+## Estrutura resumida
+- `app/api/`: rotas da API
+- `app/services/`: parsing, sync, normalização, retry e deduplicação
+- `app/persistence/`: banco e repositórios
+- `app/tests/`: testes automatizados
+- `scripts/bootstrap_gmail_token.py`: geração do `token.json`
+- `scripts/seed_demo_data.py`: carga de dados de exemplo
+
+## Endpoints principais
 - `GET /api/v1/health`
 - `GET /api/v1/jobs`
 - `GET /api/v1/jobs/{job_id}`
@@ -29,140 +43,137 @@ API em Python para centralizar e processar vagas do LinkedIn recebidas por e-mai
 - `GET /api/v1/sync/runs/{run_id}`
 - `GET /api/v1/sync/runs/{run_id}/events`
 - `GET /api/v1/stats/summary`
+- `GET /api/v1/ignored-emails`
+- `GET /api/v1/ignored-emails/by-reason`
 
-## Como iniciar o projeto
-### 0. Ajustar o .env
-- copie `.env.example` para `.env`
-- defina `API_KEY`
-- confira `GOOGLE_CREDENTIALS_FILE` e `GOOGLE_TOKEN_FILE`
-- ajuste `GMAIL_NEWER_THAN_DAYS` e `GMAIL_MAX_RESULTS` se necessário
+## Pré-requisitos
+- Python 3.11 ou superior
+- credenciais OAuth do Google para Gmail API
+- arquivo `credentials.json`
+- ambiente virtual recomendado
 
-### 1. Preparar o ambiente
+## Configuração rápida
+### 1. Criar e ativar o ambiente virtual
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # Linux/macOS
-# .venv\Scripts\activate   # Windows
+```
+
+Linux/macOS:
+```bash
+source .venv/bin/activate
+```
+
+Windows PowerShell:
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+Windows CMD:
+```bat
+.venv\Scripts\activate.bat
+```
+
+### 2. Instalar dependências
+```bash
 pip install -r requirements.txt
+```
+
+### 3. Criar o arquivo `.env`
+```bash
 cp .env.example .env
 ```
 
-No `.env`, mantenha este filtro inicial para garantir que só mensagens com remetente do ecossistema LinkedIn entrem no pipeline:
+Ajuste pelo menos:
+- `API_KEY`
+- `GOOGLE_CREDENTIALS_FILE`
+- `GOOGLE_TOKEN_FILE`
+- `GMAIL_NEWER_THAN_DAYS`
+- `GMAIL_MAX_RESULTS`
+- `ALLOWED_SENDER_CONTAINS`
+- `ENABLE_BROAD_LINKEDIN_FALLBACK`
 
+Exemplo importante:
 ```env
 ALLOWED_SENDER_CONTAINS=linkedin.com
+ENABLE_BROAD_LINKEDIN_FALLBACK=true
 ```
 
-No fluxo de busca do Gmail, a prioridade agora é:
-1. aplicar `ALLOWED_SENDER_CONTAINS` na própria query (ex.: `from:linkedin.com newer_than:7d`)
-2. tentar queries específicas de vagas
-3. manter `linkedin newer_than:Xd` apenas como fallback amplo
+## Geração do token do Gmail
+1. Crie um projeto no Google Cloud.
+2. Habilite a Gmail API.
+3. Crie credenciais OAuth para aplicativo desktop.
+4. Salve o arquivo em `./secrets/credentials.json`.
+5. Rode:
 
-
-### 2. Gerar o token do Gmail
 ```bash
 python -m scripts.bootstrap_gmail_token
 ```
 
-### 3. Iniciar a API
+Isso gera `./secrets/token.json`, usado nas próximas execuções.
+
+## Como iniciar a API
 ```bash
 uvicorn app.main:app --reload
 ```
 
-### 4. Abrir a documentação
+Depois acesse:
 - Swagger: `http://127.0.0.1:8000/docs`
-- Healthcheck: `GET /api/v1/health`
+- Healthcheck: `http://127.0.0.1:8000/api/v1/health`
 
-## Bootstrap do token do Gmail
-1. Crie um projeto no Google Cloud.
-2. Habilite a Gmail API.
-3. Crie credenciais OAuth para app desktop.
-4. Salve o arquivo em `./secrets/credentials.json`.
-5. Gere o token inicial com:
-
-```bash
-python -m scripts.bootstrap_gmail_token
-```
-
-Esse comando precisa estar no README porque é o fluxo padrão para gerar `./secrets/token.json`.
-
-Depois disso, o `token.json` será salvo em `./secrets/token.json` e o refresh será feito automaticamente.
-
-## Seed de dados para testar a API sem Gmail
-Para subir a API e já ver vagas em `/docs` ou nos endpoints, rode:
+## Seed de dados para testar sem Gmail
+Para subir a API e testar endpoints sem depender de sync real:
 
 ```bash
 python -m scripts.seed_demo_data
 ```
 
-## Melhorias no parser
-O parser agora trata melhor dois cenários:
+## Fluxo atual de sincronização
+A estratégia atual prioriza segurança e redução de ruído:
+1. tenta queries restritas com remetente permitido
+2. agrega os `gmail_message_id` encontrados
+3. remove mensagens já processadas
+4. faz parsing e deduplicação por vaga
+5. usa fallback amplo `linkedin newer_than:Xd` **somente** quando as queries restritas retornam zero e quando `ENABLE_BROAD_LINKEDIN_FALLBACK=true`
 
-### 1. E-mails de vaga única
-- `email_job_alert_digest_01` agora tem parser dedicado (`linkedin_job_alert_digest_v1`) para melhorar extração de `title`, `company` e `location_raw`.
-Continua suportando:
-- links diretos `/jobs/view/...`
-- links com query string e tracking
-- links de redirecionamento que embutem a URL da vaga
-- extração de título a partir do assunto
-- extração de empresa pelo assunto e por padrões de texto
-- variações simples de remoto, híbrido e presencial
+Isso evita que buscas amplas tragam e-mails externos ou ruído desnecessário na maioria dos runs.
 
-### 2. E-mails com múltiplas vagas
-Para templates conhecidos como `email_jobs_viewed_job_reminder_01`, o parser prefere `text/plain` e extrai blocos repetidos no formato:
-- título
-- empresa
-- local
-- `Visualizar vaga: URL`
+## Templates do LinkedIn suportados
+### `email_jobs_viewed_job_reminder_01`
+- vagas semelhantes / vagas visualizadas
+- extrai múltiplas vagas no mesmo e-mail
 
-Cada vaga vira um registro separado no banco, mantendo o mesmo `gmail_message_id` do e-mail original.
+### `email_jobs_saved_job_reminder_01`
+- vaga salva ainda disponível + vagas relacionadas
+- extrai a vaga principal e vagas adicionais
 
+### `email_application_confirmation_with_nba_01`
+- confirmação de candidatura + vagas semelhantes
+- extrai a vaga confirmada e recomendações do corpo
 
-## Templates do LinkedIn suportados atualmente
-O parser já reconhece e trata via `text/plain` estes templates reais do LinkedIn:
+### `email_job_alert_digest_01`
+- alerta/digest de vagas
+- usa parser dedicado para melhorar `title`, `company` e `location_raw`
 
-- `email_jobs_viewed_job_reminder_01`
-  - e-mail de vagas semelhantes / vagas visualizadas
-  - extrai múltiplas vagas do mesmo e-mail
-- `email_jobs_saved_job_reminder_01`
-  - e-mail de vaga salva ainda disponível + outras vagas salvas
-  - extrai a vaga principal e as vagas salvas listadas no corpo
-- `email_application_confirmation_with_nba_01`
-  - e-mail de confirmação de candidatura + vagas semelhantes
-  - extrai a vaga confirmada e as vagas recomendadas no corpo
+Quando chega um template diferente, o sistema registra o caso em `unknown_email_templates` para evolução futura.
 
-Quando chega um template diferente, o sistema continua registrando em `unknown_email_templates` para evolução futura.
+## Campo `is_easy_apply`
+O projeto agora suporta o campo `is_easy_apply: bool | null` por vaga.
 
-## Logs e observabilidade mínima
-O projeto grava logs no console e também em `logs/app.log` com rotação simples.
+Regra atual:
+- `True` quando o parser HTML identifica explicitamente o texto **`Candidatura simplificada`**
+- `False` quando a vaga foi analisada no HTML e esse marcador não aparece no bloco correspondente
+- `None` quando não há base suficiente para inferência
 
-O sync agora registra no log:
-- query Gmail efetiva
-- assunto do e-mail
-- `X-LinkedIn-Template`
-- quantidade de vagas extraídas por e-mail
-- inserções, duplicatas e falhas
+Esse campo pode variar dentro do mesmo e-mail, então ele é salvo **por vaga**, não por mensagem.
 
-Também registra templates desconhecidos na tabela `unknown_email_templates`.
-
-## Registro de templates desconhecidos
-Quando chega um e-mail com `X-LinkedIn-Template` não mapeado, o sistema:
-- escreve um warning no log
-- salva um registro em `unknown_email_templates`
-- tenta seguir com fallback genérico
-
-Isso ajuda a evoluir o parser sem perder exemplos reais.
-
-## Banco / migração local
-Se você já tinha um banco SQLite antigo, a aplicação tenta adicionar automaticamente as colunas novas em `jobs` no startup.
-
-Mesmo assim, se estiver em ambiente de desenvolvimento e quiser limpar qualquer resíduo, você pode apagar o banco local e recriar:
+### Filtro no endpoint `GET /api/v1/jobs`
+Exemplos:
+```bash
+curl -H "X-API-Key: SUA_CHAVE" "http://127.0.0.1:8000/api/v1/jobs?is_easy_apply=true"
+```
 
 ```bash
-# Windows PowerShell
-Remove-Item .\data\jobs_hub.db
-
-# depois
-python -m scripts.seed_demo_data
+curl -H "X-API-Key: SUA_CHAVE" "http://127.0.0.1:8000/api/v1/jobs?is_easy_apply=false"
 ```
 
 ## Header obrigatório
@@ -170,7 +181,7 @@ python -m scripts.seed_demo_data
 X-API-Key: <valor definido no .env>
 ```
 
-## Exemplo de resposta do POST /sync
+## Exemplo de resposta do `POST /api/v1/sync`
 ```json
 {
   "run_id": 1,
@@ -178,46 +189,91 @@ X-API-Key: <valor definido no .env>
 }
 ```
 
-## GitHub
-### Arquivo `.gitignore`
-O projeto inclui `.gitignore` na raiz para evitar versionar `.env`, `secrets/credentials.json`, `token.json`, caches, bancos locais e ambientes virtuais.
+## Logs e observabilidade
+O projeto grava logs no console e também em `logs/app.log`.
 
-### Como subir no GitHub
-```bash
-git init
-git branch -M main
-git add .
-git commit -m "feat: fase 1.2 do linkedin gmail jobs hub"
-git remote add origin https://github.com/SEU_USUARIO/SEU_REPOSITORIO.git
-git push -u origin main
+O sync registra, entre outros pontos:
+- query Gmail efetiva
+- assunto do e-mail
+- template do LinkedIn
+- quantidade de vagas extraídas por e-mail
+- inserções, duplicatas e falhas
+- templates desconhecidos
+
+## E-mails ignorados e templates desconhecidos
+Quando uma mensagem não deve virar vaga, o sistema pode auditá-la em estruturas de apoio para investigação posterior.
+
+Isso ajuda a responder perguntas como:
+- por que um e-mail foi descartado?
+- qual motivo aparece com mais frequência?
+- quais templates novos ainda precisam de parser dedicado?
+
+## Banco local e atualização de schema
+Se você já tinha um banco SQLite anterior, a aplicação tenta adicionar automaticamente colunas novas em `jobs` no startup, incluindo `is_easy_apply`.
+
+Em ambiente local, se quiser resetar o banco:
+
+Windows PowerShell:
+```powershell
+Remove-Item .\data\jobs_hub.db
 ```
 
-## Checklist rápido
-- copie `.env.example` para `.env`
-- rode `python -m scripts.bootstrap_gmail_token`
-- rode `python -m scripts.seed_demo_data` se quiser dados de teste
-- suba a API
-- abra `/docs`
-- valide `POST /sync`, `GET /jobs` e `GET /stats/summary`
+Linux/macOS:
+```bash
+rm -f ./data/jobs_hub.db
+```
 
+Depois, opcionalmente:
+```bash
+python -m scripts.seed_demo_data
+```
 
-## Testes unitários com e-mails reais do LinkedIn
-O projeto agora inclui fixtures `.eml` reais para validar parsing dos principais formatos já encontrados:
-
-- `linkedin_multi_jobs.eml`
-- `linkedin_saved_jobs_reminder.eml`
-- `linkedin_application_confirmation.eml`
-
-Esses testes validam:
-- quantidade de vagas extraídas por template
-- `linkedin_job_id` esperado
-- `parser_used` aplicado
-- `linkedin_template` correspondente
-
-## Rodando os testes
+## Como executar os testes
+### Rodar toda a suíte
 ```bash
 pytest
 ```
+
+### Rodar com mais detalhes
+```bash
+pytest -vv
+```
+
+### Rodar um arquivo específico
+```bash
+pytest app/tests/test_parser.py -vv
+```
+
+```bash
+pytest app/tests/test_api.py -vv
+```
+
+### Rodar um teste específico
+```bash
+pytest app/tests/test_parser.py -k easy_apply -vv
+```
+
+### Rodar com cobertura
+Se você instalar as dependências de desenvolvimento do `pyproject.toml`:
+```bash
+pip install -e .[dev]
+pytest --cov=app --cov-report=term-missing
+```
+
+## O que os testes cobrem hoje
+- parsing dos principais templates reais do LinkedIn
+- extração de múltiplas vagas por e-mail
+- detecção de `is_easy_apply`
+- normalização de URL
+- deduplicação
+- filtros e autenticação básica da API
+- queries Gmail e partes centrais do sync
+
+## Limitações atuais e próximos passos recomendados
+- adicionar teste de persistência do `is_easy_apply` no SQLite
+- adicionar teste de migração/schema para bancos antigos
+- continuar refinando o parser de `email_job_alert_digest_01`
+- expandir fixtures reais para novos templates do LinkedIn
 
 ## Arquivos que não devem subir para o GitHub
 - `secrets/credentials.json`
@@ -227,137 +283,10 @@ pytest
 
 O `.gitignore` já está configurado para isso.
 
-
-## Logs em disco
-Além do terminal, a aplicação agora grava logs em `./logs/app.log` com rotação simples.
-
-## Estratégia atual de sincronização
-Nesta versão, o sync usa múltiplas queries em ordem de relaxamento, agrega os `gmail_message_id` encontrados, remove IDs já presentes em `processed_gmail_messages` e só então processa as mensagens novas. Isso evita reler sempre o mesmo e-mail em cada execução.
-
-## Correção para e-mails com múltiplas vagas
-A aplicação agora aceita várias vagas para o mesmo `gmail_message_id`. Para bancos SQLite antigos, o startup tenta migrar automaticamente a tabela `jobs` removendo a unicidade indevida em `gmail_message_id` e recriando os índices necessários.
-
-## Comandos recomendados após atualizar
+## Comandos mais usados
 ```bash
 python -m scripts.bootstrap_gmail_token
+python -m scripts.seed_demo_data
 uvicorn app.main:app --reload
-```
-
-
-## O que melhoramos nesta versão
-- seção explícita de inicialização do projeto no README
-- testes unitários com um e-mail real do LinkedIn em formato `.eml`
-- correção do `SyncRunRepository.save()` para não perder contadores por rollback indevido
-- paginação na listagem de mensagens do Gmail
-- agregação de resultados de múltiplas queries do Gmail em vez de parar na primeira que retornar algo
-- tabela `processed_gmail_messages` para evitar reprocessar o mesmo `gmail_message_id` em todos os runs
-- filtro de mensagens já processadas antes do parsing e da deduplicação por vaga
-- fallback automático para queries menos restritivas quando a busca original voltar vazia
-- encerramento limpo do sync quando nenhuma mensagem nova corresponder à query
-- configuração de retry via `.env`
-- classificação padronizada de erros (`network_dns_error`, `network_timeout`, `gmail_auth_error`, `gmail_rate_limit`, `db_integrity_error`, etc.)
-- retry com backoff exponencial e jitter para falhas transitórias de rede e Gmail
-- tabela `sync_run_events` para trilha de execução do sync
-- endpoint `GET /api/v1/sync/runs/{run_id}/events`
-- tratamento melhor de falhas de DNS/rede sem deixar a execução em estado inconsistente
-- fechamento consistente do run com `completed` ou `failed`
-- logs no console e em disco com rotação em `logs/app.log`
-
-## O que deixamos para depois
-- fila dedicada com Redis/Arq ou Celery
-- Postgres como banco principal para multiusuário e maior concorrência
-- autenticação mais robusta para a API (JWT/OAuth2)
-- alertas externos (Telegram/Discord/e-mail) para falhas de sync
-- observabilidade avançada com tracing e error reporting centralizado
-- dashboard visual separado da API e do Swagger
-
-
-## Sugestões de evolução usando esses e-mails
-Com base nos novos e-mails analisados, estes próximos passos passam a fazer bastante sentido:
-
-- adicionar um campo opcional de contexto da vaga no e-mail, por exemplo `email_job_role`
-  - `primary_saved_job`
-  - `saved_related_job`
-  - `application_confirmed_job`
-  - `application_recommended_job`
-- criar filtros na API para `linkedin_template`
-- criar score/regras por template para priorizar vagas mais relevantes
-- separar no dashboard futuro as vagas capturadas de:
-  - vaga salva
-  - vaga recomendada
-  - vaga já candidata
-
-Na versão atual, esse contexto ainda pode ser inferido por `linkedin_template` e `parser_used`, e também pode ser armazenado no `raw_metadata_json` se você quiser evoluir isso depois.
-
-
-
-## Filtro de segurança para e-mails genéricos do LinkedIn
-
-O projeto **mantém** a busca genérica `linkedin newer_than:Xd` como último fallback, mas agora aplica um funil rígido antes do parsing/persistência:
-
-- só processa e-mails de remetentes do ecossistema LinkedIn
-- ignora templates conhecidos que não são de vaga, como convites, mensagens, analytics e grupos
-- só persiste registros em `jobs` quando existe `linkedin_job_id` ou `linkedin_job_url`
-- mensagens não elegíveis são marcadas em `processed_gmail_messages` com `outcome` de ignoradas e registradas em `unknown_email_templates` com o motivo
-
-### Filtro inicial de remetente
-O pipeline só processa mensagens cujo `From` contenha algum fragmento configurado em `ALLOWED_SENDER_CONTAINS`.
-
-Exemplo recomendado:
-
-```env
-ALLOWED_SENDER_CONTAINS=linkedin.com
-```
-
-### Templates de vaga aceitos
-- `email_jobs_viewed_job_reminder_01`
-- `email_jobs_saved_job_reminder_01`
-- `email_application_confirmation_with_nba_01`
-- `email_job_alert_digest_01`
-
-### Templates não-vaga ignorados
-- `email_pymk_02`
-- `email_m2m_invite_single_01`
-- `email_member_message_v2`
-- `email_groups_recommended_by_admin_01`
-- `email_weekly_analytics_recap_v2`
-
-
-## E-mails ignorados
-
-O projeto agora expõe endpoints para auditar mensagens descartadas antes do parser/persistência. Isso ajuda a verificar ruído trazido pela busca genérica `linkedin newer_than:Xd` sem poluir a tabela `jobs`.
-
-Endpoints:
-- `GET /api/v1/ignored-emails`
-- `GET /api/v1/ignored-emails/by-reason`
-
-Exemplos de motivo:
-- `unsupported_sender`
-- `non_job_template`
-- `missing_job_link`
-- `missing_job_signal`
-
-Uso sugerido:
-1. rode um sync
-2. consulte `GET /api/v1/ignored-emails/by-reason`
-3. veja quais tipos de e-mail estão sendo descartados
-4. só promova um template novo para parser de vaga quando houver evidência real de job link e estrutura consistente
-
-
-## Fallback amplo do Gmail
-
-O projeto tenta primeiro queries restritas por remetente permitido (`ALLOWED_SENDER_CONTAINS`).
-O fallback amplo `linkedin newer_than:Xd` só roda quando essas queries retornam zero resultados **e** `ENABLE_BROAD_LINKEDIN_FALLBACK=true`.
-
-Exemplo no `.env`:
-
-```env
-ALLOWED_SENDER_CONTAINS=linkedin.com
-ENABLE_BROAD_LINKEDIN_FALLBACK=true
-```
-
-Para desligar totalmente o fallback amplo:
-
-```env
-ENABLE_BROAD_LINKEDIN_FALLBACK=false
+pytest
 ```

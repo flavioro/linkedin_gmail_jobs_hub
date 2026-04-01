@@ -51,6 +51,7 @@ class ParseService:
                 )
             )
 
+        jobs = self._apply_easy_apply_flags(jobs, html)
         if jobs:
             return jobs
 
@@ -66,7 +67,7 @@ class ParseService:
                 raw_email_link=raw_email_link,
             )
             if special_single:
-                return [special_single]
+                return self._apply_easy_apply_flags([special_single], html)
 
         single = self._parse_single(
             gmail_message_id=gmail_message_id,
@@ -78,7 +79,7 @@ class ParseService:
             body_hash=body_hash,
             raw_email_link=raw_email_link,
         )
-        return [single] if single else []
+        return self._apply_easy_apply_flags([single], html) if single else []
 
 
     def parse(self, *, gmail_message_id: str, headers: dict[str, str], html: str, text: str) -> JobParsed:
@@ -193,6 +194,7 @@ class ParseService:
             title=title,
             company=company,
             location_raw=location,
+            is_easy_apply=None,
             seniority=self._detect_seniority(" ".join(candidates)),
             work_model=self._detect_work_model(" ".join(candidates)),
             received_at=received_at,
@@ -240,6 +242,7 @@ class ParseService:
             title=title,
             company=company,
             location_raw=location,
+            is_easy_apply=None,
             seniority=self._detect_seniority(combined_text),
             work_model=self._detect_work_model(combined_text),
             received_at=received_at,
@@ -322,12 +325,55 @@ class ParseService:
             title=title,
             company=company,
             location_raw=location,
+            is_easy_apply=None,
             seniority=seniority,
             work_model=work_model,
             received_at=received_at,
             body_html_hash=body_hash,
             raw_metadata_json=json.dumps(metadata, ensure_ascii=False),
         )
+
+    def _apply_easy_apply_flags(self, jobs: list[JobParsed], html: str) -> list[JobParsed]:
+        if not jobs:
+            return jobs
+        flags_by_key = self._extract_easy_apply_flags_from_html(html)
+        if not flags_by_key:
+            return jobs
+        for job in jobs:
+            keys = [job.linkedin_job_id, job.linkedin_job_url]
+            matched = next((flags_by_key[key] for key in keys if key and key in flags_by_key), None)
+            if matched is not None:
+                job.is_easy_apply = matched
+        return jobs
+
+    def _extract_easy_apply_flags_from_html(self, html: str) -> dict[str, bool]:
+        if not html or "Candidatura simplificada" not in html:
+            return {}
+
+        pattern = re.compile(r"https?://[^\s\"']+/jobs/view/\d+/[^\s\"']*")
+        matches = list(pattern.finditer(html))
+        if not matches:
+            return {}
+
+        unique_jobs: list[tuple[str, str, int]] = []
+        seen_job_ids: set[str] = set()
+        for match in matches:
+            raw_url = match.group(0).replace("&amp;", "&")
+            normalized_url = self.normalize_service.normalize_linkedin_job_url(raw_url)
+            linkedin_job_id = self.normalize_service.extract_linkedin_job_id(normalized_url or raw_url)
+            if not linkedin_job_id or linkedin_job_id in seen_job_ids:
+                continue
+            seen_job_ids.add(linkedin_job_id)
+            unique_jobs.append((linkedin_job_id, normalized_url or raw_url, match.start()))
+
+        flags: dict[str, bool] = {}
+        for index, (linkedin_job_id, normalized_url, start_pos) in enumerate(unique_jobs):
+            end_pos = unique_jobs[index + 1][2] if index + 1 < len(unique_jobs) else len(html)
+            segment = html[start_pos:end_pos]
+            has_easy_apply = "Candidatura simplificada" in segment
+            flags[linkedin_job_id] = has_easy_apply
+            flags[normalized_url] = has_easy_apply
+        return flags
 
     def _normalize_text_for_plain(self, text: str) -> str:
         raw = text or ""
@@ -546,7 +592,7 @@ class ParseService:
         banned_fragments = ["outras oportunidades", "candidate-se", "conex", "linkedin", "cargo de"]
         if any(fragment in lowered for fragment in banned_fragments):
             return False
-        if re.search(r"(brasil|são paulo|sao paulo|campinas|jaguariúna|jaguariuna|remoto|remote|hybrid|híbrido|hibrido)", lowered):
+        if re.search(r"\b(brasil|são paulo|sao paulo|campinas|jaguariúna|jaguariuna|remoto|remote|hybrid|híbrido|hibrido|com inglês|com ingles)\b", lowered):
             return True
         return "," in value or " - " in value
 

@@ -132,6 +132,11 @@ def test_parse_many_from_application_confirmation_eml_fixture():
     assert any(job.title == "SUPORTE JUNIOR I" for job in jobs)
     assert all(job.linkedin_template == "email_application_confirmation_with_nba_01" for job in jobs)
     assert all(job.parser_used == "linkedin_application_confirmation_plain_text_v1" for job in jobs)
+    easy_apply_by_id = {job.linkedin_job_id: job.is_easy_apply for job in jobs}
+    assert easy_apply_by_id["4385054128"] is False
+    assert easy_apply_by_id["4395160653"] is False
+    assert easy_apply_by_id["4388591312"] is True
+    assert easy_apply_by_id["4392680569"] is True
 
 
 import pytest

@@ -21,6 +21,7 @@ class Job(Base):
     title: Mapped[str | None] = mapped_column(String(512), nullable=True)
     company: Mapped[str | None] = mapped_column(String(255), nullable=True)
     location_raw: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    is_easy_apply: Mapped[bool | None] = mapped_column(nullable=True)
     seniority: Mapped[str] = mapped_column(String(32), default="nao_informado", nullable=False)
     work_model: Mapped[str] = mapped_column(String(32), default="nao_informado", nullable=False)
     received_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

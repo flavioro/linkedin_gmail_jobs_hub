@@ -58,6 +58,7 @@ def _rebuild_jobs_table_sqlite(conn) -> None:
                 title VARCHAR(512),
                 company VARCHAR(255),
                 location_raw VARCHAR(255),
+                is_easy_apply BOOLEAN,
                 seniority VARCHAR(32) NOT NULL DEFAULT 'nao_informado',
                 work_model VARCHAR(32) NOT NULL DEFAULT 'nao_informado',
                 received_at DATETIME,
@@ -75,12 +76,12 @@ def _rebuild_jobs_table_sqlite(conn) -> None:
             """
             INSERT INTO jobs__new (
                 id, gmail_message_id, external_message_id, linkedin_job_id, linkedin_job_url, raw_email_link,
-                email_subject, linkedin_template, parser_used, title, company, location_raw, seniority, work_model,
+                email_subject, linkedin_template, parser_used, title, company, location_raw, is_easy_apply, seniority, work_model,
                 received_at, body_html_hash, status, raw_metadata_json, created_at, updated_at
             )
             SELECT
                 id, gmail_message_id, external_message_id, linkedin_job_id, linkedin_job_url, raw_email_link,
-                email_subject, linkedin_template, parser_used, title, company, location_raw, seniority, work_model,
+                email_subject, linkedin_template, parser_used, title, company, location_raw, NULL, seniority, work_model,
                 received_at, body_html_hash, status, raw_metadata_json, created_at, updated_at
             FROM jobs
             """
@@ -105,6 +106,7 @@ def ensure_schema_upgrades() -> None:
                 "email_subject": "ALTER TABLE jobs ADD COLUMN email_subject VARCHAR(512)",
                 "linkedin_template": "ALTER TABLE jobs ADD COLUMN linkedin_template VARCHAR(255)",
                 "parser_used": "ALTER TABLE jobs ADD COLUMN parser_used VARCHAR(128)",
+                "is_easy_apply": "ALTER TABLE jobs ADD COLUMN is_easy_apply BOOLEAN",
             }
             for name, sql in alterations.items():
                 if name not in columns:

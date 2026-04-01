@@ -1,3 +1,5 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
@@ -14,6 +16,7 @@ def list_jobs(
     company: str | None = None,
     seniority: str | None = None,
     work_model: str | None = None,
+    is_easy_apply: Annotated[bool | None, Query(description="Filter by LinkedIn Easy Apply / Candidatura simplificada when known.")] = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[JobRead]:
@@ -22,6 +25,7 @@ def list_jobs(
         company=company,
         seniority=seniority,
         work_model=work_model,
+        is_easy_apply=is_easy_apply,
         limit=limit,
         offset=offset,
     )
