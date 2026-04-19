@@ -1,0 +1,1 @@
+powershell -ExecutionPolicy Bypass -File .\scripts\powershell\show_db_tables.ps1

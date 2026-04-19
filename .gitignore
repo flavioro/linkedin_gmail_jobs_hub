@@ -39,6 +39,12 @@ data/
 *.sqlite3
 *.log
 
+# Ignora todos os artefatos gerados e logs
+logs/*
+
+# (Opcional) Mantém a estrutura da pasta no repositório, caso outra pessoa clone o projeto
+!logs/.gitkeep
+
 # Test and tooling caches
 .pytest_cache/
 .mypy_cache/
