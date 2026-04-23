@@ -70,6 +70,30 @@ class SyncService:
                 self._event(events_repo, run_id, "warning", "sync_disabled", "Gmail sync disabled by configuration")
                 return
 
+            auth_status = self.gmail_client.check_auth_status(interactive=False)
+            if not auth_status.ok:
+                logger.error(
+                    "gmail auth preflight failed | run_id=%s | code=%s | message=%s",
+                    run_id,
+                    auth_status.code,
+                    auth_status.message,
+                )
+                self._event(
+                    events_repo,
+                    run_id,
+                    "error",
+                    "gmail_auth_failed",
+                    "Falha na validacao da autenticacao do Gmail antes da sincronizacao",
+                    {
+                        "code": auth_status.code,
+                        "detail": auth_status.message,
+                        "token_file": str(self.gmail_client.token_file),
+                        "credentials_file": str(self.gmail_client.credentials_file),
+                    },
+                )
+                run_repo.mark_failed(run, auth_status.code)
+                return
+
             effective_query, raw_message_ids = self._find_message_ids(events_repo, run_id)
             logger.info("starting gmail sync | run_id=%s | query=%s", run_id, effective_query)
             self._event(events_repo, run_id, "info", "query_built", "Gmail query built", {"query": effective_query})

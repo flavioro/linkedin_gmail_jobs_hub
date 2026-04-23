@@ -1,7 +1,9 @@
 import base64
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -12,11 +14,113 @@ from app.core.config import settings
 SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
 
+@dataclass
+class GmailAuthStatus:
+    ok: bool
+    code: str
+    message: str
+
+
 class GmailClient:
     def __init__(self) -> None:
         self.token_file = Path(settings.google_token_file)
         self.credentials_file = Path(settings.google_credentials_file)
         self._service = None
+
+    def check_auth_status(self, interactive: bool = False) -> GmailAuthStatus:
+        if not self.credentials_file.exists():
+            return GmailAuthStatus(
+                ok=False,
+                code="credentials_missing",
+                message=f"Arquivo de credenciais nao encontrado: {self.credentials_file}",
+            )
+
+        if not self.token_file.exists():
+            if interactive:
+                try:
+                    self.ensure_credentials(interactive=True)
+                    return GmailAuthStatus(
+                        ok=True,
+                        code="ok",
+                        message="Token Gmail gerado com sucesso em modo interativo.",
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    return GmailAuthStatus(
+                        ok=False,
+                        code="interactive_auth_failed",
+                        message=f"Falha ao gerar token Gmail em modo interativo: {exc}",
+                    )
+
+            return GmailAuthStatus(
+                ok=False,
+                code="token_missing",
+                message=(
+                    f"Token Gmail nao encontrado: {self.token_file}. "
+                    "Execute scripts/bootstrap_gmail_token.py para gerar um novo token."
+                ),
+            )
+
+        try:
+            creds = Credentials.from_authorized_user_file(str(self.token_file), SCOPES)
+        except Exception as exc:  # noqa: BLE001
+            return GmailAuthStatus(
+                ok=False,
+                code="token_load_failed",
+                message=f"Falha ao carregar token Gmail: {exc}",
+            )
+
+        try:
+            if creds and creds.valid:
+                return GmailAuthStatus(
+                    ok=True,
+                    code="ok",
+                    message="Token Gmail valido.",
+                )
+
+            if creds and creds.expired and creds.refresh_token:
+                creds.refresh(Request())
+                self.token_file.parent.mkdir(parents=True, exist_ok=True)
+                self.token_file.write_text(creds.to_json(), encoding="utf-8")
+                return GmailAuthStatus(
+                    ok=True,
+                    code="ok",
+                    message="Token Gmail renovado com sucesso.",
+                )
+
+            if interactive:
+                self.ensure_credentials(interactive=True)
+                return GmailAuthStatus(
+                    ok=True,
+                    code="ok",
+                    message="Token Gmail reautenticado em modo interativo.",
+                )
+
+            return GmailAuthStatus(
+                ok=False,
+                code="token_invalid",
+                message=(
+                    "Token Gmail invalido ou expirado sem refresh disponivel. "
+                    "Execute scripts/bootstrap_gmail_token.py."
+                ),
+            )
+
+        except RefreshError as exc:
+            return GmailAuthStatus(
+                ok=False,
+                code="token_refresh_failed",
+                message=(
+                    "Nao foi possivel renovar o token Gmail. "
+                    "Provavelmente ele expirou ou foi revogado. "
+                    "Execute scripts/bootstrap_gmail_token.py para autenticar novamente. "
+                    f"Detalhe: {exc}"
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            return GmailAuthStatus(
+                ok=False,
+                code="auth_check_failed",
+                message=f"Falha ao validar autenticacao do Gmail: {exc}",
+            )
 
     def ensure_credentials(self, interactive: bool = True) -> Credentials:
         creds: Credentials | None = None
@@ -50,7 +154,7 @@ class GmailClient:
     @property
     def service(self):
         if self._service is None:
-            creds = self.ensure_credentials(interactive=True)
+            creds = self.ensure_credentials(interactive=False)
             self._service = build("gmail", "v1", credentials=creds)
         return self._service
 
@@ -84,12 +188,9 @@ class GmailClient:
 
         candidates: list[str] = []
 
-        # Prioridade 1: restringir a busca no Gmail já na origem para remetentes permitidos.
-        # Ex.: ALLOWED_SENDER_CONTAINS=linkedin.com -> from:linkedin.com newer_than:Xd
         for fragment in allowed_sender_fragments:
             candidates.append(f"from:{fragment} newer_than:{newer_than_days}d")
 
-        # Prioridade 2: queries específicas de jobs ainda dentro do universo esperado.
         candidates.extend(
             [
                 self.build_query(include_label=True, include_subjects=True),
