@@ -64,3 +64,5 @@ Thumbs.db
 
 logs/*.log
 !logs/.gitkeep
+exports/
+README_estrutura_final.txt
