@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -61,6 +63,16 @@ class JobsRepository:
             stmt = stmt.where(Job.work_model == work_model)
         if is_easy_apply is not None:
             stmt = stmt.where(Job.is_easy_apply.is_(is_easy_apply))
+        return list(self.db.execute(stmt).scalars().all())
+
+    def list_recent_by_days(self, days: int) -> list[Job]:
+        safe_days = max(int(days), 1)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=safe_days)
+        stmt = (
+            select(Job)
+            .where(func.coalesce(Job.received_at, Job.created_at) >= cutoff)
+            .order_by(func.coalesce(Job.received_at, Job.created_at).desc(), Job.id.desc())
+        )
         return list(self.db.execute(stmt).scalars().all())
 
     def count_all(self) -> int:

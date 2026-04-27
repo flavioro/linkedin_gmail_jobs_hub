@@ -7,9 +7,9 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.persistence.db import Base, engine, ensure_schema_upgrades  # noqa: E402
+from app.persistence.db import Base, SessionLocal, engine, ensure_schema_upgrades  # noqa: E402
 from app.persistence.repositories.sync_runs import SyncRunRepository  # noqa: E402
-from app.persistence.db import SessionLocal  # noqa: E402
+from app.services.job_csv_export_service import JobCsvExportService  # noqa: E402
 from app.services.sync_service import SyncService  # noqa: E402
 
 
@@ -56,16 +56,17 @@ def main() -> int:
             final_run.total_failed,
         )
 
-        if run.status == "failed":
-            logger.error("Sincronizacao terminou com status '%s'.", run.status)
-            if run.error_summary in {"credentials_missing", "token_missing", "token_invalid", "token_refresh_failed"}:
-                logger.error("Acao necessaria: execute scripts\\bootstrap_gmail_token.py para reautenticar o Gmail.")
-            raise SystemExit(1)
-
         if final_run.status != "completed":
             logger.error("Sincronização terminou com status '%s'.", final_run.status)
             return 1
 
+        export_result = JobCsvExportService().export_recent_jobs(db)
+        logger.info(
+            "CSV exportado com sucesso | dias=%s | linhas=%s | arquivo=%s",
+            export_result.days,
+            export_result.row_count,
+            export_result.output_path,
+        )
         return 0
     finally:
         db.close()

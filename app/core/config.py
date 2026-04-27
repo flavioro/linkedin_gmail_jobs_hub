@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     retry_max_attempts: int = 3
     retry_base_delay_seconds: float = 1.0
     retry_jitter_seconds: float = 0.25
+    csv_export_dir: str = "./exports"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
